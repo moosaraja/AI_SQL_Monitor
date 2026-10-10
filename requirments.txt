@@ -1,0 +1,5 @@
+python-dotenv==1.2.3
+psycopg2-binary==2.9.12
+sentence-transformers==6.1.0
+text_chunker==0.2.2
+nltk==3.10.3

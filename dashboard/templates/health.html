@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Server Health | AI SQL Monitor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: #f3f6fb;
+      color: #243247;
+    }
+
+    .navbar {
+      background: #15263f;
+    }
+
+    .panel {
+      border: 0;
+      border-radius: 14px;
+      box-shadow: 0 3px 16px rgba(20, 40, 70, .07);
+    }
+
+    .metric-label {
+      color: #728096;
+      font-size: .9rem;
+    }
+
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .updated {
+      color: #728096;
+      font-size: .8rem;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 280px;
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-dark py-3">
+    <div class="container">
+      <a href="/health" class="navbar-brand fw-bold">AI SQL Monitor</a>
+      <div class="d-flex gap-2">
+        <a href="/incidents" class="btn btn-outline-light btn-sm">Incidents</a>
+        <a href="/" class="btn btn-outline-light btn-sm">Investigation</a>
+      </div>
+    </div>
+  </nav>
+  <main class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h3 class="mb-1">SQL Server Health</h3>
+        <div class="updated" id="server-name">Loading server information...</div>
+      </div>
+      <span class="badge bg-secondary" id="health-status">Loading</span>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-3 col-sm-6">
+        <div class="card panel p-4 h-100">
+          <div class="metric-label">SQL Server CPU</div>
+          <div class="metric-value" id="cpu-value">--</div>
+          <div class="updated">CPU utilization</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-sm-6">
+        <div class="card panel p-4 h-100">
+          <div class="metric-label">Memory Used</div>
+          <div class="metric-value" id="memory-value">--</div>
+          <div class="updated" id="memory-total">Physical memory</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-sm-6">
+        <div class="card panel p-4 h-100">
+          <div class="metric-label">User Sessions</div>
+          <div class="metric-value" id="sessions-value">--</div>
+          <div class="updated">Connected sessions</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-sm-6">
+        <div class="card panel p-4 h-100">
+          <div class="metric-label">Blocking Sessions</div>
+          <div class="metric-value" id="blocking-value">--</div>
+          <div class="updated">Currently blocked requests</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-2">
+      <div class="col-lg-6">
+        <div class="card panel p-4 h-100">
+          <h5>SQL Server CPU History</h5>
+          <div class="chart-container"><canvas id="cpuChart"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card panel p-4 h-100">
+          <h5>Physical Memory Usage History</h5>
+          <div class="chart-container"><canvas id="memoryChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card panel mt-4">
+      <div class="card-body p-4">
+        <h5>Latest Monitoring Snapshot</h5>
+        <div class="updated mb-3" id="snapshot-id">Waiting for data...</div>
+        <pre id="snapshot-json" class="bg-light p-3 rounded" style="max-height:400px;overflow:auto;"></pre>
+      </div>
+    </div>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script>
+    const HEALTH_REFRESH_MS = 3000;
+    const HISTORY_REFRESH_MS = 10000;
+
+    function displayNumber(value, suffix = "") {
+      return value === undefined || value === null ? "--" : value + suffix;
+    }
+
+    function setStatus(text, className) {
+      const badge = document.getElementById("health-status");
+      badge.textContent = text;
+      badge.className = "badge " + className;
+    }
+
+    async function refreshHealth() {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch("/api/health", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (data.status !== "OK") {
+          setStatus("No Data", "bg-warning text-dark");
+          return;
+        }
+        const metrics = data.metrics || {};
+        document.getElementById("server-name").textContent = data.server_name || "Unknown server";
+        document.getElementById("cpu-value").textContent = displayNumber(metrics.cpu?.value, "%");
+        const memory = metrics.memory || {};
+        const total = Number(memory.total_physical_memory_gb);
+        const available = Number(memory.available_physical_memory_gb);
+        if (memory.total_physical_memory_gb != null && memory.available_physical_memory_gb != null && Number.isFinite(total) && Number.isFinite(available)) {
+          document.getElementById("memory-value").textContent = (total - available).toFixed(1) + " GB";
+          document.getElementById("memory-total").textContent = "Total: " + total + " GB";
+        } else {
+          document.getElementById("memory-value").textContent = "--";
+        }
+        document.getElementById("sessions-value").textContent = displayNumber(metrics.sessions?.count);
+        document.getElementById("blocking-value").textContent = displayNumber(metrics.blocking?.count);
+        document.getElementById("snapshot-id").textContent = "Snapshot ID: " + data.snapshot_id;
+        document.getElementById("snapshot-json").textContent = JSON.stringify(metrics, null, 2);
+        setStatus("Monitoring", "bg-success");
+      } catch (error) {
+        console.error("Health refresh failed:", error);
+        setStatus("Connection Error", "bg-danger");
+      }
+    }
+
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: true } }
+    };
+
+    let cpuChart = null;
+    let memoryChart = null;
+    if (typeof Chart !== "undefined") {
+      cpuChart = new Chart(document.getElementById("cpuChart"), {
+        type: "line",
+        data: { labels: [], datasets: [{ label: "SQL Server CPU %", data: [], borderColor: "#2563eb", tension: .3, pointRadius: 0 }] },
+        options: { ...chartDefaults, scales: { y: { min: 0, max: 100 } } }
+      });
+      memoryChart = new Chart(document.getElementById("memoryChart"), {
+        type: "line",
+        data: { labels: [], datasets: [{ label: "Physical memory used (GB)", data: [], borderColor: "#16a34a", tension: .3, pointRadius: 0 }] },
+        options: chartDefaults
+      });
+    } else {
+      console.error("Chart.js could not be loaded. Check your internet connection or CDN access.");
+    }
+
+    async function refreshHistory() {
+      if (document.visibilityState !== "visible" || !cpuChart || !memoryChart) return;
+      try {
+        const response = await fetch("/api/health/history", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const rows = await response.json();
+        if (!Array.isArray(rows)) throw new Error("History API did not return an array");
+        const labels = rows.map(row =>
+          new Date(row.collected_at).toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            timeZone: "Asia/Kolkata"
+          })
+        );
+        const cpuValues = rows.map(row => row.cpu?.value ?? null);
+        const memoryValues = rows.map(row => {
+          const memory = row.memory || {};
+          if (memory.total_physical_memory_gb == null || memory.available_physical_memory_gb == null) return null;
+          const used = Number(memory.total_physical_memory_gb) - Number(memory.available_physical_memory_gb);
+          return Number.isFinite(used) ? Number(used.toFixed(2)) : null;
+        });
+        cpuChart.data.labels = labels;
+        cpuChart.data.datasets[0].data = cpuValues;
+        cpuChart.update("none");
+        memoryChart.data.labels = labels;
+        memoryChart.data.datasets[0].data = memoryValues;
+        memoryChart.update("none");
+      } catch (error) {
+        console.error("History refresh failed:", error);
+      }
+    }
+
+    refreshHealth();
+    refreshHistory();
+    setInterval(refreshHealth, HEALTH_REFRESH_MS);
+    setInterval(refreshHistory, HISTORY_REFRESH_MS);
+  </script>
+</body>
+
+</html>

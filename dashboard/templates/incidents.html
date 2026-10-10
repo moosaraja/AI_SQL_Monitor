@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Incidents | AI SQL Monitor</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: #f3f6fb;
+            color: #243247;
+        }
+
+        .navbar {
+            background: #15263f;
+        }
+
+        .panel {
+            border: 0;
+            border-radius: 14px;
+            box-shadow: 0 3px 16px rgba(20, 40, 70, .07);
+        }
+
+        .metric-number {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .metric-label {
+            color: #728096;
+            font-size: .85rem;
+        }
+
+        .table th {
+            color: #728096;
+            font-size: .8rem;
+        }
+
+        .table td {
+            vertical-align: middle;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-dark py-3">
+        <div class="container">
+            <a href="/incidents" class="navbar-brand fw-bold">
+                AI SQL Monitor
+            </a>
+            <a href="/" class="btn btn-outline-light btn-sm">
+                Investigation
+            </a>
+        </div>
+    </nav>
+
+    <main class="container py-4">
+
+        <h3 class="mb-4">Incident Management</h3>
+
+        <div class="row g-3 mb-4">
+            {% for label, value, color in [
+            ('Total Incidents', summary.total, 'primary'),
+            ('Open Incidents', summary.open_count, 'warning'),
+            ('Resolved', summary.resolved_count, 'success'),
+            ('Critical Open', summary.critical_open, 'danger')
+            ] %}
+            <div class="col-md-3 col-sm-6">
+                <div class="card panel p-3">
+                    <div class="metric-label">{{ label }}</div>
+                    <div class="metric-number text-{{ color }}" id="summary-{{ loop.index }}">
+                        {{ value }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="card panel">
+            <div class="card-body p-4">
+
+                <h5 class="mb-3">Recent Incidents</h5>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Server</th>
+                                <th>Database</th>
+                                <th>Metric</th>
+                                <th>Severity</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="incidents-body">
+                            {% for incident in incidents %}
+                            <tr>
+                                <td>{{ incident.id }}</td>
+                                <td>{{ incident.server_name }}</td>
+                                <td>{{ incident.database_name }}</td>
+                                <td>{{ incident.metric }}</td>
+
+                                <td>
+                                    {% if incident.severity == 'CRITICAL' %}
+                                    <span class="badge bg-danger">CRITICAL</span>
+                                    {% elif incident.severity == 'WARNING' %}
+                                    <span class="badge bg-warning text-dark">WARNING</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">
+                                        {{ incident.severity }}
+                                    </span>
+                                    {% endif %}
+                                </td>
+
+                                <td>
+                                    {% if incident.status == 'OPEN' %}
+                                    <span class="badge bg-warning text-dark">OPEN</span>
+                                    {% else %}
+                                    <span class="badge bg-success">
+                                        {{ incident.status }}
+                                    </span>
+                                    {% endif %}
+                                </td>
+
+                                <td>
+                                    {{ incident.created_at.strftime('%Y-%m-%d %H:%M') if incident.created_at else '-' }}
+                                </td>
+
+                                <td>
+                                    <form action="/investigate" method="POST">
+                                        <input type="hidden" name="incident_id" value="{{ incident.id }}">
+                                        <button type="submit" class="btn btn-primary btn-sm">
+                                            Investigate
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">
+                                    No incidents found.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const REFRESH_INTERVAL = 1500;
+
+        let updating = false;
+
+        function escapeHtml(value) {
+            return String(value ?? "").replace(/[&<>"']/g, ch => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;"
+            })[ch]);
+        }
+
+        async function refreshIncidents() {
+            if (updating || document.visibilityState !== "visible") {
+                return;
+            }
+
+            updating = true;
+
+            try {
+                const response = await fetch("/api/incidents", {
+                    cache: "no-store"
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Update summary cards
+                document.getElementById("summary-1").textContent =
+                    data.summary.total;
+
+                document.getElementById("summary-2").textContent =
+                    data.summary.open_count;
+
+                document.getElementById("summary-3").textContent =
+                    data.summary.resolved_count;
+
+                document.getElementById("summary-4").textContent =
+                    data.summary.critical_open;
+
+                // Update incident table
+                const tbody = document.getElementById("incidents-body");
+
+                if (!data.incidents.length) {
+                    tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">
+                        No incidents found.
+                    </td>
+                </tr>
+            `;
+                    return;
+                }
+
+                tbody.innerHTML = data.incidents.map(incident => {
+
+                    const severity = String(incident.severity ?? "");
+                    const status = String(incident.status ?? "");
+
+                    const severityClass =
+                        severity === "CRITICAL" ? "bg-danger" :
+                            severity === "WARNING" ? "bg-warning text-dark" :
+                                "bg-secondary";
+
+                    const statusClass =
+                        status === "OPEN" ?
+                            "bg-warning text-dark" : "bg-success";
+
+                    const created = incident.created_at
+                        ? new Date(incident.created_at).toLocaleString()
+                        : "-";
+
+                    const id = Number(incident.id);
+
+                    return `
+                <tr>
+                    <td>${id}</td>
+                    <td>${escapeHtml(incident.server_name)}</td>
+                    <td>${escapeHtml(incident.database_name)}</td>
+                    <td>${escapeHtml(incident.metric)}</td>
+                    <td>
+                        <span class="badge ${severityClass}">
+                            ${escapeHtml(severity)}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge ${statusClass}">
+                            ${escapeHtml(status)}
+                        </span>
+                    </td>
+                    <td>${escapeHtml(created)}</td>
+                    <td>
+                        <form action="/investigate" method="POST">
+                            <input type="hidden"
+                                   name="incident_id"
+                                   value="${id}">
+                            <button type="submit"
+                                    class="btn btn-primary btn-sm">
+                                Investigate
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            `;
+                }).join("");
+
+            } catch (error) {
+                console.error("Incident refresh failed:", error);
+            } finally {
+                updating = false;
+            }
+        }
+
+        refreshIncidents();
+        setInterval(refreshIncidents, REFRESH_INTERVAL);
+    </script>
+
+</body>
+
+</html>

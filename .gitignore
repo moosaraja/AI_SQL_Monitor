@@ -4,3 +4,15 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .vscode/
+tests/
+monitoring/__pycache__
+dashboard/__pycache__
+app/
+config/
+AgenticAI_for_SQLMonitoring - Project Setup Start
+block.sql
+makedeadlock1.sql
+makedeadlock2.sql
+setuppythonpath.ps1
+setuppythonpath.py
+workFlow_forblocking.pdf
