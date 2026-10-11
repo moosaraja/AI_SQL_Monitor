@@ -14,6 +14,7 @@ sys.path.insert(
 )
 
 from investigation import investigate_incident
+from live_health import get_live_health
 
 from dashboard_repository import (
     get_recent_incidents,
@@ -109,6 +110,16 @@ def api_health():
         "database_name": result["database_name"],
         "metrics": result["snapshot"]
     })
+
+@app.route("/api/health/live")
+def api_health_live():
+    try:
+        metrics = get_live_health()
+        return jsonify({"status": "OK", "metrics": metrics})
+    except Exception:
+        app.logger.exception("Live health collection failed")
+        return jsonify({"status": "ERROR", "message": "Live health unavailable"}), 503
+
 
 @app.route("/api/health/history")
 def api_health_history():

@@ -42,6 +42,14 @@
             font-size: 1.2rem;
             font-weight: 700;
         }
+        .report-section {border:1px solid #e5ebf3;border-radius:12px;padding:20px;margin-bottom:14px;background:#fff}
+        .report-heading {display:flex;align-items:center;gap:12px;font-size:1rem;font-weight:700;color:#213a5c;margin-bottom:12px}
+        .report-icon {width:38px;height:38px;border-radius:10px;background:#edf3ff;display:grid;place-items:center;font-size:1.1rem}
+        .report-body {white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;color:#34445a}
+        .report-section.caution {background:#fffaf0;border-color:#f8e4b4}
+        .report-section.problem {background:#fff8f7;border-color:#f8dfdc}
+        .query-card {background:#101d31;color:#e7efff;border-radius:12px;padding:18px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:0.9rem/1.65 Consolas,monospace}
+        .report-topline {font-size:.85rem;color:#728096}
     </style>
 </head>
 
@@ -139,9 +147,24 @@
                 <h5 class="section-title mb-3">
                     AI DBA Investigation
                 </h5>
-                <div class="ai-output">{{ result.llm_analysis }}</div>
+                <div class="report-topline mb-3">Structured AI assessment · Verify findings against captured SQL Server evidence</div>
+                <div id="ai-report" class="d-none"></div>
+                <div id="ai-raw" class="ai-output">{{ result.llm_analysis }}</div>
             </div>
         </div>
+        {% endif %}
+
+        {% if result.query_evidence %}
+        <div class="card panel mb-4"><div class="card-body p-4">
+            <h5 class="section-title mb-3">⌨️ SQL Query Evidence</h5>
+            <p class="text-muted small">Captured queries associated with the incident; correlation does not prove causation.</p>
+            {% for query in result.query_evidence %}
+            <div class="mb-3">
+                <div class="small text-muted mb-2">Session {{ query.session_id | default('N/A') }} · {{ query.database_name | default('Unknown database') }} · CPU time {{ query.cpu_time_ms | default('N/A') }} ms</div>
+                <pre class="query-card">{{ query.sql_text | default('SQL text unavailable') }}</pre>
+            </div>
+            {% endfor %}
+        </div></div>
         {% endif %}
 
         {% if result.analysis is defined %}
@@ -195,5 +218,58 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function () {
+    const raw = document.getElementById('ai-raw');
+    const output = document.getElementById('ai-report');
+    if (!raw || !output) return;
+    const sections = [
+        ['INCIDENT TYPE', '🗂️', ''],
+        ['PROBLEM', '🚨', 'problem'],
+        ['LIKELY CAUSE', '🔍', ''],
+        ['EVIDENCE', '📊', ''],
+        ['IMPACT', '📉', ''],
+        ['RECOMMENDED DBA INVESTIGATION', '🛠️', ''],
+        ['CAUTIONS', '⚠️', 'caution']
+    ];
+    const text = raw.textContent.trim();
+    const lines = text.split(/\r?\n/);
+    const parsed = [];
+    let current = null;
+    for (const line of lines) {
+        const cleaned = line.trim().replace(/^#{1,6}\s*/, '').replace(/^\*\*(.*?)\*\*$/, '$1');
+        const match = sections.find(([name]) => new RegExp('^' + name + '\s*[:：-]?\s*$', 'i').test(cleaned));
+        const inline = !match && sections.find(([name]) => new RegExp('^' + name + '\s*[:：]\s*\S', 'i').test(cleaned));
+        if (match || inline) {
+            const item = match || inline;
+            current = {name: item[0], icon: item[1], style: item[2], content: []};
+            parsed.push(current);
+            if (inline) current.content.push(cleaned.slice(cleaned.indexOf(':') + 1).trim());
+        } else if (current) {
+            current.content.push(line);
+        }
+    }
+    if (parsed.length < 2) return; // Keep original output if the model uses a different format.
+    for (const part of parsed) {
+        const section = document.createElement('section');
+        section.className = 'report-section ' + part.style;
+        const heading = document.createElement('div');
+        heading.className = 'report-heading';
+        const icon = document.createElement('span');
+        icon.className = 'report-icon';
+        icon.textContent = part.icon;
+        const title = document.createElement('span');
+        title.textContent = part.name.replace(/\b\w/g, c => c.toUpperCase());
+        heading.append(icon, title);
+        const body = document.createElement('div');
+        body.className = 'report-body';
+        body.textContent = part.content.join('\n').trim() || 'Not provided';
+        section.append(heading, body);
+        output.append(section);
+    }
+    raw.classList.add('d-none');
+    output.classList.remove('d-none');
+})();
+</script>
 </body>
 </html>

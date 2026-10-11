@@ -128,3 +128,30 @@ def get_health_history(limit=60):
     finally:
         connection.close()
 
+def get_recent_cpu_values(server_name, limit=3):
+    connection = get_pg_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT (snapshot->'cpu'->>'value')::float
+                FROM monitoring_snapshots
+                WHERE server_name = %s
+                AND snapshot->'cpu'->>'value' IS NOT NULL
+                ORDER BY id DESC
+                LIMIT %s;
+                """,
+                (server_name, limit)
+            )
+
+            rows = cursor.fetchall()
+
+            return [
+                row[0]
+                for row in reversed(rows)
+            ]
+
+    finally:
+        connection.close()
+

@@ -42,3 +42,21 @@ def save_snapshot(snapshot):
 
     finally:
         connection.close()
+
+
+def get_last_snapshot_time(server_name):
+    """Return most recent persisted snapshot time (timezone-aware)."""
+    connection = get_pg_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT MAX(collected_at)
+                FROM monitoring_snapshots
+                WHERE server_name = %s
+                """,
+                (server_name,)
+            )
+            return cursor.fetchone()[0]
+    finally:
+        connection.close()
