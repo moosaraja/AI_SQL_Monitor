@@ -86,7 +86,10 @@ def investigate_incident(incident_id):
         "analysis": analysis,
         "rag_results": rag_results,
         "rag_context": rag_context,
-        "llm_analysis": llm_analysis
+        "llm_analysis": llm_analysis,
+        "query_evidence": analysis.get("analyses", {}).get(
+            "query_performance", {}
+        ).get("candidates", [])
     }
 
 def print_investigation(result):

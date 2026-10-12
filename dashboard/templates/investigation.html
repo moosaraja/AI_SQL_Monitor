@@ -155,16 +155,54 @@
         {% endif %}
 
         {% if result.query_evidence %}
-        <div class="card panel mb-4"><div class="card-body p-4">
-            <h5 class="section-title mb-3">⌨️ SQL Query Evidence</h5>
-            <p class="text-muted small">Captured queries associated with the incident; correlation does not prove causation.</p>
-            {% for query in result.query_evidence %}
-            <div class="mb-3">
-                <div class="small text-muted mb-2">Session {{ query.session_id | default('N/A') }} · {{ query.database_name | default('Unknown database') }} · CPU time {{ query.cpu_time_ms | default('N/A') }} ms</div>
-                <pre class="query-card">{{ query.sql_text | default('SQL text unavailable') }}</pre>
+        <div class="card panel mb-4">
+            <div class="card-body p-4">
+                <h5 class="section-title mb-2">⌨️ SQL Query Evidence</h5>
+                <p class="text-muted small mb-3">
+                    Captured query statistics are potential contributors, not proof of causation.
+                    Cached-plan CPU values are cumulative since the plan was cached.
+                </p>
+                {% for query in result.query_evidence %}
+                <div class="border rounded-3 p-3 mb-3">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                        <span class="badge bg-primary">{{ 'Query Store' if query.source == 'TOP_CPU_QUERY_STORE' else 'Cached plan' if query.source == 'TOP_CPU_CACHED' else query.source | default('Query evidence', true) }}</span>
+                        <span class="small text-muted">{{ query.database_name | default('Unknown database', true) }}</span>
+                        {% if query.session_id is defined and query.session_id is not none %}
+                        <span class="small text-muted">Session {{ query.session_id }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3 h-100">
+                                <div class="metric-label">Total CPU time</div>
+                                <div class="metric-value">
+                                    {% if query.total_cpu_ms is defined and query.total_cpu_ms is not none %}
+                                        {{ '%.2f' | format(query.total_cpu_ms | float) }} ms
+                                    {% else %}N/A{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3 h-100">
+                                <div class="metric-label">Executions</div>
+                                <div class="metric-value">{{ query.execution_count | default('N/A', true) }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-light rounded p-3 h-100">
+                                <div class="metric-label">Logical reads</div>
+                                <div class="metric-value">{{ query.total_logical_reads | default('N/A', true) }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if query.last_execution_time %}
+                    <p class="small text-muted mb-2">Last execution: {{ query.last_execution_time }}</p>
+                    {% endif %}
+                    <pre class="query-card mb-0">{{ query.sql_text | default('SQL text unavailable', true) }}</pre>
+                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
-        </div></div>
+        </div>
         {% endif %}
 
         {% if result.analysis is defined %}
